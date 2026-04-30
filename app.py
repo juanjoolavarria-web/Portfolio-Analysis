@@ -485,7 +485,7 @@ def convert_amount(amount, from_curr, to_curr, fx_day):
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. CARGA DE DATOS (sin cambios)
 # ─────────────────────────────────────────────────────────────────────────────
-@st.cache_data
+@st.cache_data(ttl=300)  # refresca desde Drive cada 5 minutos
 def load_data():
     xl = pd.ExcelFile(load_excel_from_drive("datos"))
 
@@ -674,7 +674,7 @@ def compute_portfolio(_df_char_filt, _df_flows_raw, report_curr, as_of_date_dt, 
         stats_list.append({
             "Fund": fund, "GP": f_meta['GP'], "Strategy": f_meta['Strategy'],
             "Vintage": f_meta['Vintage'], "Periodo NAV": nav_period,
-            "Commitment": comm_rep, "Paid-In": calls_rep, "Unfunded": comm_rep - calls_rep,
+            "Commitment": comm_rep, "Paid-In": calls_rep, "Unfunded": max(comm_rep - calls_rep, 0),
             "Distributed": dists_rep, "NAV": nav_rep, "Total Value": dists_rep + nav_rep,
             "IRR %": tir_rep,
             "TVPI": (dists_rep + nav_rep) / (calls_rep if calls_rep > 0 else 1),
@@ -977,6 +977,10 @@ try:
                           help="Limpia el caché y recalcula todos los datos desde cero"):
         st.cache_data.clear()
         st.rerun()
+    if st.sidebar.button("☁️ Recargar datos Drive", key="btn_reload_drive",
+                          help="Fuerza releer datos.xlsx desde Google Drive"):
+        load_data.clear()
+        st.rerun()
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1186,7 +1190,7 @@ try:
 
     if tab_active("📊 Status"):
         t_tv   = t_dist + t_nav
-        t_unf  = t_comm - t_paid
+        t_unf  = max(t_comm - t_paid, 0)
         t_gl   = t_tv - t_paid
         g_tvpi = t_tv / t_paid if t_paid > 0 else 0
         g_dpi  = t_dist / t_paid if t_paid > 0 else 0
