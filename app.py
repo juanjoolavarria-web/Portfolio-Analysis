@@ -12,6 +12,45 @@ from openpyxl.styles import (Font, PatternFill, Alignment, Border, Side,
 from openpyxl.utils import get_column_letter
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GOOGLE DRIVE — carga de archivos via Service Account
+# ─────────────────────────────────────────────────────────────────────────────
+DRIVE_FILE_IDS = {
+    "datos":        "1g8GYj_zU0BmfuRLf-Ts6WV2Eq6YFCWJw",
+    "curvas_cobalt": "1pj4RInTUAFB-dlNQfgq02-xlPwfgGVmZ",
+}
+
+@st.cache_resource(show_spinner=False)
+def _get_drive_service():
+    """Crea cliente de Google Drive usando las credenciales del secrets.toml."""
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        creds = service_account.Credentials.from_service_account_info(
+            creds_dict, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+        return build("drive", "v3", credentials=creds)
+    except Exception as e:
+        return None
+
+def load_excel_from_drive(file_key: str) -> io.BytesIO:
+    """Descarga un Excel de Drive y lo devuelve como BytesIO."""
+    file_id = DRIVE_FILE_IDS[file_key]
+    service = _get_drive_service()
+    if service is None:
+        raise RuntimeError("No se pudo conectar a Google Drive. Revisa los secrets.")
+    from googleapiclient.http import MediaIoBaseDownload
+    request = service.files().get_media(fileId=file_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    buf.seek(0)
+    return buf
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HELPER — genera Excel formateado y devuelve bytes para st.download_button
 # ─────────────────────────────────────────────────────────────────────────────
 def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data",
@@ -448,7 +487,7 @@ def convert_amount(amount, from_curr, to_curr, fx_day):
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    xl = pd.ExcelFile("datos.xlsx")
+    xl = pd.ExcelFile(load_excel_from_drive("datos"))
 
     df_char = pd.read_excel(xl, sheet_name="Characteristics")
     df_char.columns = df_char.columns.str.strip()
@@ -975,7 +1014,8 @@ try:
         as_of_date_dt,
         fx_map,
         (tuple(sorted(df_char_filt['Fund'].tolist())),
-         str(as_of_date_dt.date()), report_curr),
+         str(as_of_date_dt.date()), report_curr,
+         round(fx_today.get('USD', 1.0), 6)),  # incluir FX para invalidar caché si cambia
     )
     if not df_final.empty:
         df_final.index = range(1, len(df_final) + 1)
@@ -988,7 +1028,8 @@ try:
             calc_curr, df_final, df_flows_raw, df_char,
             as_of_date_dt, fx_map, fx_today,
             (tuple(sorted(df_final['Fund'].tolist())),
-             str(as_of_date_dt.date()), calc_curr),
+             str(as_of_date_dt.date()), calc_curr,
+             round(fx_today.get('USD', 1.0), 6)),
             "v5",
         )
 
@@ -2409,15 +2450,19 @@ try:
         # ── Cargar curvas Hamilton Lane ───────────────────────────────────────
         @st.cache_data(ttl=60)
         def load_hl_curves():
-            import os
-            path = "Curvas_Cobalt.xlsx"
-            if not os.path.exists(path):
+            try:
+                buf = load_excel_from_drive("curvas_cobalt")
+            except Exception:
                 return None
             sheets = ['Buyout','Growth','Secondaries','FoF',
                       'RealEstate','CreditDistressed','CreditOther']
             curves = {}
             for s in sheets:
-                df = pd.read_excel(path, sheet_name=s, header=None)
+                try:
+                    df = pd.read_excel(buf, sheet_name=s, header=None)
+                    buf.seek(0)
+                except Exception:
+                    continue
                 header_row = None
                 for i, row in df.iterrows():
                     if any(str(v).strip() == 'Contributions' for v in row.values):
@@ -2740,7 +2785,7 @@ try:
         curves_ok = hl_curves is not None
 
         if not curves_ok:
-            st.warning("⚠️ No se encontró `Curvas_Cobalt.xlsx`. Colócalo junto a `app.py`.")
+            st.warning("⚠️ No se pudo cargar Curvas_Cobalt.xlsx desde Google Drive.")
 
         st.markdown("### 🔮 Simulación de Portfolio")
 
@@ -2756,7 +2801,7 @@ try:
                        "(basado en Fecha 1° Capital Call), usando el NAV real como ancla.")
 
             if not curves_ok:
-                st.error("Archivo `Curvas_Cobalt.xlsx` no encontrado.")
+                st.error("No se pudo cargar Curvas_Cobalt.xlsx desde Google Drive.")
             else:
                 # Fondos hipotéticos
                 st.markdown("##### ➕ Agregar fondo hipotético")
