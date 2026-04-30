@@ -2842,7 +2842,39 @@ try:
                 # Construir lista fondos (excluye co-inversiones)
                 COINV_STRATS = ['Single Co-Inv']
                 sim_funds_f = []
+
+                # Fondos ya en df_final (tienen flujos)
+                funds_in_final = set(df_final['Fund'].tolist())
+
+                # Incluir también fondos de df_char_filt que aún no han iniciado
+                # (no están en df_final porque no tienen flujos hasta la fecha de corte)
+                df_char_sim = df_char_filt[
+                    (~df_char_filt['Fund'].isin(funds_in_final)) &
+                    (~df_char_filt['Strategy'].isin(COINV_STRATS))
+                ].copy()
+
+                # Combinar: filas de df_final + filas de fondos sin iniciar
+                rows_to_sim = []
                 for _, frow in df_final[~df_final['Strategy'].isin(COINV_STRATS)].iterrows():
+                    rows_to_sim.append({
+                        'Fund': frow['Fund'], 'Strategy': frow['Strategy'],
+                        'Commitment': frow['Commitment'], 'NAV': frow['NAV'],
+                        'Unfunded': frow['Unfunded'], 'Paid-In': frow['Paid-In'],
+                        'from_final': True,
+                    })
+                for _, crow in df_char_sim.iterrows():
+                    strat = crow.get('Strategy', '')
+                    if not STRAT_TO_CURVE.get(strat): continue
+                    fx_c = fx_map.get(crow['Fecha Commitment'].date(), fx_today)
+                    comm_rep = convert_amount(crow['Commitment'], crow['Currency'], report_curr, fx_c)
+                    rows_to_sim.append({
+                        'Fund': crow['Fund'], 'Strategy': strat,
+                        'Commitment': comm_rep, 'NAV': 0.0,
+                        'Unfunded': comm_rep, 'Paid-In': 0.0,
+                        'from_final': False,
+                    })
+
+                for frow in rows_to_sim:
                     strat = frow['Strategy']
                     curve_name = STRAT_TO_CURVE.get(strat)
                     if not curve_name: continue
@@ -2852,13 +2884,13 @@ try:
                     current_unfunded = frow['Unfunded']
 
                     # Saltar fondos terminados: NAV=0 pero tienen Paid-In
-                    # (distribuyeron todo — no hay nada que proyectar)
                     if current_nav <= 0 and frow['Paid-In'] > 0:
                         continue
 
-                    char_row    = df_char[df_char['Fund'] == fund_name]
+                    char_row = df_char[df_char['Fund'] == fund_name]
                     if char_row.empty: continue
                     first_call_date = char_row['Fecha 1er Call'].iloc[0]
+                    if pd.isna(first_call_date): continue
                     first_call_ts   = pd.Timestamp(first_call_date)
                     mo = first_call_ts.month
                     qm = ((mo-1)//3+1)*3
@@ -2867,18 +2899,12 @@ try:
                     months_diff = (as_of_ts.year - first_call_qend.year)*12 \
                                   + (as_of_ts.month - first_call_qend.month)
 
-                    # Si el 1er call es en el futuro → q_elapsed negativo → proyectar desde Q1
-                    # Si ya pasó → q_current = trimestres transcurridos (el actual ya completado)
-                    # La proyección usa > q_current, así que:
-                    #   - 1er call futuro: q_current=0 → proyecta desde Q1
-                    #   - 1er call pasado: q_current=q_elapsed → proyecta desde q_elapsed+1
                     if months_diff < 0:
                         # Fondo aún no ha hecho primer call — proyectar desde Q1
                         q_current = 0
                         current_nav      = 0.0
                         current_unfunded = commitment
                     else:
-                        # Contar trimestres inclusivos: Q1 2017 a Q4 2025 = 36 trimestres
                         q_current = len(pd.date_range(first_call_qend, as_of_ts, freq='QE'))
                         crv_len   = len(hl_curves[curve_name]['df'])
                         q_current = min(q_current, crv_len - 1)
