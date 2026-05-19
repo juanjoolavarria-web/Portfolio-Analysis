@@ -759,15 +759,22 @@ def _calc_quarterly_evolutions(calc_curr, _df_final, _df_flows_raw, _df_char,
             p_n_rep = n_r
             tqc = abs(sum(q_f[q_f['Type'].str.contains('Call', case=False)]['Amt_R']))
             tqd = sum(q_f[q_f['Type'].str.contains('Dist', case=False)]['Amt_R'])
-            f_t[q_d.strftime('%d-%m-%Y')] = (tqd + n_r) / (tqc if tqc > 0 else 1)
-            f_d[q_d.strftime('%d-%m-%Y')] = tqd / (tqc if tqc > 0 else 1)
-            try:
-                f_i[q_d.strftime('%d-%m-%Y')] = _xirr(
-                    q_f[~q_f['Type'].str.contains('NAV', case=False)]['Date'].tolist() + [q_d],
-                    q_f[~q_f['Type'].str.contains('NAV', case=False)]['Amt_R'].tolist() + [float(n_r)]
-                ) * 100
-            except:
-                f_i[q_d.strftime('%d-%m-%Y')] = 0
+
+            if not nav_this_q.empty:
+                # Solo calcular IRR y TVPI si hay NAV en este trimestre
+                f_t[q_d.strftime('%d-%m-%Y')] = (tqd + n_r) / (tqc if tqc > 0 else 1)
+                f_d[q_d.strftime('%d-%m-%Y')] = tqd / (tqc if tqc > 0 else 1)
+                try:
+                    f_i[q_d.strftime('%d-%m-%Y')] = _xirr(
+                        q_f[~q_f['Type'].str.contains('NAV', case=False)]['Date'].tolist() + [q_d],
+                        q_f[~q_f['Type'].str.contains('NAV', case=False)]['Amt_R'].tolist() + [float(n_r)]
+                    ) * 100
+                except:
+                    f_i[q_d.strftime('%d-%m-%Y')] = 0
+            else:
+                f_i[q_d.strftime('%d-%m-%Y')] = None
+                f_t[q_d.strftime('%d-%m-%Y')] = None
+                f_d[q_d.strftime('%d-%m-%Y')] = tqd / (tqc if tqc > 0 else 1)  # DPI sí se calcula siempre
         irr_ev_l.append(f_i); tvpi_ev_l.append(f_t)
         dpi_ev_l.append(f_d); ret_ev_l.append(f_r)
     return irr_ev_l, tvpi_ev_l, dpi_ev_l, ret_ev_l
@@ -1039,7 +1046,7 @@ try:
              str(as_of_date_dt.date()), calc_curr,
              round(fx_today.get('USD', 1.0), 6),
              data_hash),
-            "v5",
+            "v6",
         )
 
     def calc_pooled_irr(group_df):
@@ -1739,12 +1746,6 @@ try:
         df_tvpi5 = pd.DataFrame(tvpi_ev5)
         q_cols_tvpi5 = [c for c in df_tvpi5.columns if c != 'Fund']
         df_tvpi5 = df_tvpi5[['Fund'] + q_cols_tvpi5[::-1]]
-        # Anular trimestres sin NAV (donde IRR es None)
-        for col in q_cols_tvpi5:
-            if col in df_irr5.columns:
-                df_tvpi5[col] = df_tvpi5[col].where(
-                    df_tvpi5['Fund'].map(lambda f: df_irr5.loc[f, col] if f in df_irr5.index else None).notna(),
-                    other=None)
         meta = df_final[['Fund','Strategy','Vintage']]
         df_tvpi5 = meta.merge(df_tvpi5, on='Fund', how='right')
         q_cols5 = [c for c in df_tvpi5.columns if c not in ['Fund','Strategy','Vintage']]
