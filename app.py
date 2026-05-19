@@ -1701,11 +1701,12 @@ try:
         cc4  = CURR_KEYS[sel4]
         st.caption(f"ℹ️ {curr_caption(cc4)}")
         irr_ev4, _, _, _ = calc_quarterly_evolutions(cc4)
-        df_irr4 = pd.DataFrame(irr_ev4).set_index('Fund')
-        df_irr4 = df_irr4[df_irr4.columns[::-1]]
-        meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
-        df_irr4 = meta.join(df_irr4, how='right')
-        q_cols4 = [c for c in df_irr4.columns if c not in ['Strategy','Vintage']]
+        df_irr4 = pd.DataFrame(irr_ev4)
+        q_cols_irr4 = [c for c in df_irr4.columns if c != 'Fund']
+        df_irr4 = df_irr4[['Fund'] + q_cols_irr4[::-1]]
+        meta = df_final[['Fund','Strategy','Vintage']]
+        df_irr4 = meta.merge(df_irr4, on='Fund', how='right')
+        q_cols4 = [c for c in df_irr4.columns if c not in ['Fund','Strategy','Vintage']]
         fmt_irr = {c: '{:.2f}%' for c in q_cols4}
         GRUPOS_EV = {
             "🏦 Private Equity": ["Buyout","Secondaries","Growth Equity","Venture Capital","Fund of Funds"],
@@ -1735,15 +1736,18 @@ try:
         irr_ev5, tvpi_ev5, _, _ = calc_quarterly_evolutions(cc5)
         df_irr5  = pd.DataFrame(irr_ev5).set_index('Fund')
         df_irr5  = df_irr5[df_irr5.columns[::-1]]
-        df_tvpi5 = pd.DataFrame(tvpi_ev5).set_index('Fund')
-        df_tvpi5 = df_tvpi5[df_tvpi5.columns[::-1]]
+        df_tvpi5 = pd.DataFrame(tvpi_ev5)
+        q_cols_tvpi5 = [c for c in df_tvpi5.columns if c != 'Fund']
+        df_tvpi5 = df_tvpi5[['Fund'] + q_cols_tvpi5[::-1]]
         # Anular trimestres sin NAV (donde IRR es None)
-        for col in df_tvpi5.columns:
+        for col in q_cols_tvpi5:
             if col in df_irr5.columns:
-                df_tvpi5[col] = df_tvpi5[col].where(df_irr5[col].notna(), other=None)
-        meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
-        df_tvpi5 = meta.join(df_tvpi5, how='right')
-        q_cols5 = [c for c in df_tvpi5.columns if c not in ['Strategy','Vintage']]
+                df_tvpi5[col] = df_tvpi5[col].where(
+                    df_tvpi5['Fund'].map(lambda f: df_irr5.loc[f, col] if f in df_irr5.index else None).notna(),
+                    other=None)
+        meta = df_final[['Fund','Strategy','Vintage']]
+        df_tvpi5 = meta.merge(df_tvpi5, on='Fund', how='right')
+        q_cols5 = [c for c in df_tvpi5.columns if c not in ['Fund','Strategy','Vintage']]
         fmt_tvpi = {c: '{:.2f}x' for c in q_cols5}
         for grupo_nombre, estrategias in GRUPOS_EV.items():
             df_g = df_tvpi5[df_tvpi5['Strategy'].isin(estrategias)].copy()
@@ -1765,11 +1769,12 @@ try:
         cc6  = CURR_KEYS[sel6]
         st.caption(f"ℹ️ {curr_caption(cc6)}")
         _, _, dpi_ev6, _ = calc_quarterly_evolutions(cc6)
-        df_dpi6 = pd.DataFrame(dpi_ev6).set_index('Fund')
-        df_dpi6 = df_dpi6[df_dpi6.columns[::-1]]
-        meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
-        df_dpi6 = meta.join(df_dpi6, how='right')
-        q_cols6 = [c for c in df_dpi6.columns if c not in ['Strategy','Vintage']]
+        df_dpi6 = pd.DataFrame(dpi_ev6)
+        q_cols_dpi6 = [c for c in df_dpi6.columns if c != 'Fund']
+        df_dpi6 = df_dpi6[['Fund'] + q_cols_dpi6[::-1]]
+        meta = df_final[['Fund','Strategy','Vintage']]
+        df_dpi6 = meta.merge(df_dpi6, on='Fund', how='right')
+        q_cols6 = [c for c in df_dpi6.columns if c not in ['Fund','Strategy','Vintage']]
         fmt_dpi = {c: '{:.2f}x' for c in q_cols6}
         for grupo_nombre, estrategias in GRUPOS_EV.items():
             df_g = df_dpi6[df_dpi6['Strategy'].isin(estrategias)].copy()
@@ -1791,11 +1796,12 @@ try:
         cc7  = CURR_KEYS[sel7]
         st.caption(f"ℹ️ {curr_caption(cc7)}")
         _, _, _, ret_ev7 = calc_quarterly_evolutions(cc7)
-        df_ret7 = pd.DataFrame(ret_ev7).set_index('Fund')
-        df_ret7 = df_ret7[df_ret7.columns[::-1]]
-        meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
-        df_ret7 = meta.join(df_ret7, how='right')
-        q_cols7 = [c for c in df_ret7.columns if c not in ['Strategy','Vintage']]
+        df_ret7 = pd.DataFrame(ret_ev7)
+        q_cols_ret7 = [c for c in df_ret7.columns if c != 'Fund']
+        df_ret7 = df_ret7[['Fund'] + q_cols_ret7[::-1]]
+        meta = df_final[['Fund','Strategy','Vintage']]
+        df_ret7 = meta.merge(df_ret7, on='Fund', how='right')
+        q_cols7 = [c for c in df_ret7.columns if c not in ['Fund','Strategy','Vintage']]
         fmt_ret = {c: '{:.2f}%' for c in q_cols7}
         for grupo_nombre, estrategias in GRUPOS_EV.items():
             df_g = df_ret7[df_ret7['Strategy'].isin(estrategias)].copy()
