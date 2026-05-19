@@ -1702,6 +1702,13 @@ try:
             return "Flujos en moneda original de cada fondo — sin conversión FX."
         return f"Flujos convertidos a {cc} usando tipos de cambio históricos BCE."
 
+    GRUPOS_EV = {
+        "🏦 Private Equity": ["Buyout","Secondaries","Growth Equity","Venture Capital","Fund of Funds"],
+        "🎯 Co-Investments": ["Single Co-Inv"],
+        "💳 Private Credit": ["Credit"],
+        "🏢 Real Estate":    ["Real Estate"],
+    }
+
     if tab_active("📉 IRR"):
         sel4 = st.radio("💱 Moneda de cálculo", CURR_OPTIONS, horizontal=True, key="curr_irr",
                         index=DEFAULT_IDX.get(report_curr, 0))
@@ -1715,12 +1722,6 @@ try:
         df_irr4 = meta.merge(df_irr4, on='Fund', how='right')
         q_cols4 = [c for c in df_irr4.columns if c not in ['Fund','Strategy','Vintage']]
         fmt_irr = {c: '{:.2f}%' for c in q_cols4}
-        GRUPOS_EV = {
-            "🏦 Private Equity": ["Buyout","Secondaries","Growth Equity","Venture Capital","Fund of Funds"],
-            "🎯 Co-Investments": ["Single Co-Inv"],
-            "💳 Private Credit": ["Credit"],
-            "🏢 Real Estate":    ["Real Estate"],
-        }
         for grupo_nombre, estrategias in GRUPOS_EV.items():
             df_g = df_irr4[df_irr4['Strategy'].isin(estrategias)].copy()
             if df_g.empty: continue
