@@ -1703,59 +1703,61 @@ try:
         irr_ev4, _, _, _ = calc_quarterly_evolutions(cc4)
         df_irr4 = pd.DataFrame(irr_ev4).set_index('Fund')
         df_irr4 = df_irr4[df_irr4.columns[::-1]]
-        # Solo mostrar IRR en trimestres donde el fondo tiene NAV (no None)
-        # Los fondos sin NAV en un trimestre ya devuelven None — se muestran como "-"
-        # Agregar Strategy y Vintage
         meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
         df_irr4 = meta.join(df_irr4, how='right')
-        # Ordenar por asset class y fondo
-        PE_STRATS = ['Buyout','Growth Equity','Secondaries','Venture Capital','Fund of Funds','Single Co-Inv']
-        STRAT_ORDER = PE_STRATS + ['Real Estate','Credit']
-        df_irr4['_o'] = df_irr4['Strategy'].apply(lambda x: STRAT_ORDER.index(x) if x in STRAT_ORDER else 999)
-        df_irr4 = df_irr4.sort_values(['_o','Vintage','Fund']).drop(columns='_o')
-        q_cols = [c for c in df_irr4.columns if c not in ['Strategy','Vintage']]
-        fmt_irr = {c: '{:.2f}%' for c in q_cols}
-        def style_irr_group(row):
-            strat = row.get('Strategy','')
-            if strat in PE_STRATS: return ['background-color:#f5f9ff']*len(row)
-            if strat == 'Real Estate': return ['background-color:#f5fff5']*len(row)
-            if strat == 'Credit': return ['background-color:#fffdf0']*len(row)
-            return ['']*len(row)
-        st.dataframe(df_irr4.style.format(fmt_irr, na_rep="-").apply(style_irr_group, axis=1),
-                     use_container_width=True)
-        excel_download_btn(df_irr4.reset_index(), "IRR Trimestral",
-                           f"irr_trimestral_{cc4}.xlsx", "IRR",
-                           f"IRR Trimestral — {cc4}", report_curr, key="dl_irr")
+        q_cols4 = [c for c in df_irr4.columns if c not in ['Strategy','Vintage']]
+        fmt_irr = {c: '{:.2f}%' for c in q_cols4}
+        GRUPOS_EV = {
+            "🏦 Private Equity": ["Buyout","Secondaries","Growth Equity","Venture Capital","Fund of Funds"],
+            "🎯 Co-Investments": ["Single Co-Inv"],
+            "💳 Private Credit": ["Credit"],
+            "🏢 Real Estate":    ["Real Estate"],
+        }
+        for grupo_nombre, estrategias in GRUPOS_EV.items():
+            df_g = df_irr4[df_irr4['Strategy'].isin(estrategias)].copy()
+            if df_g.empty: continue
+            df_g = df_g.sort_values(['Vintage','Fund'])
+            df_g.index = range(1, len(df_g) + 1)
+            st.markdown(f"### {grupo_nombre}")
+            st.dataframe(df_g.style.format(fmt_irr, na_rep="-"),
+                         use_container_width=True, height=min(50 + len(df_g)*36, 600))
+            excel_download_btn(df_g.reset_index(), f"IRR {grupo_nombre.split()[-1]}",
+                               f"irr_{grupo_nombre.split()[-1].lower()}_{cc4}.xlsx",
+                               "IRR", f"IRR {grupo_nombre} — {cc4}",
+                               report_curr, key=f"dl_irr_{grupo_nombre}")
+            st.markdown("---")
 
     if tab_active("📈 TVPI"):
         sel5 = st.radio("💱 Moneda de cálculo", CURR_OPTIONS, horizontal=True, key="curr_tvpi",
                         index=DEFAULT_IDX.get(report_curr, 0))
         cc5  = CURR_KEYS[sel5]
         st.caption(f"ℹ️ {curr_caption(cc5)}")
-        _, tvpi_ev5, _, _ = calc_quarterly_evolutions(cc5)
+        irr_ev5, tvpi_ev5, _, _ = calc_quarterly_evolutions(cc5)
+        df_irr5  = pd.DataFrame(irr_ev5).set_index('Fund')
+        df_irr5  = df_irr5[df_irr5.columns[::-1]]
         df_tvpi5 = pd.DataFrame(tvpi_ev5).set_index('Fund')
         df_tvpi5 = df_tvpi5[df_tvpi5.columns[::-1]]
-        # Para TVPI: poner None en trimestres sin NAV
-        # El cálculo ya devuelve un valor aunque no haya NAV (usa calls acumulados)
-        # Necesitamos anular los trimestres donde no hay NAV real
-        irr_ev_ref, _, _, _ = calc_quarterly_evolutions(cc5)
-        df_irr_ref = pd.DataFrame(irr_ev_ref).set_index('Fund')
-        df_irr_ref = df_irr_ref[df_irr_ref.columns[::-1]]
-        # Donde IRR es None (sin NAV), poner TVPI también None
+        # Anular trimestres sin NAV (donde IRR es None)
         for col in df_tvpi5.columns:
-            if col in df_irr_ref.columns:
-                df_tvpi5[col] = df_tvpi5[col].where(df_irr_ref[col].notna(), other=None)
+            if col in df_irr5.columns:
+                df_tvpi5[col] = df_tvpi5[col].where(df_irr5[col].notna(), other=None)
         meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
         df_tvpi5 = meta.join(df_tvpi5, how='right')
-        df_tvpi5['_o'] = df_tvpi5['Strategy'].apply(lambda x: STRAT_ORDER.index(x) if x in STRAT_ORDER else 999)
-        df_tvpi5 = df_tvpi5.sort_values(['_o','Vintage','Fund']).drop(columns='_o')
         q_cols5 = [c for c in df_tvpi5.columns if c not in ['Strategy','Vintage']]
         fmt_tvpi = {c: '{:.2f}x' for c in q_cols5}
-        st.dataframe(df_tvpi5.style.format(fmt_tvpi, na_rep="-").apply(style_irr_group, axis=1),
-                     use_container_width=True)
-        excel_download_btn(df_tvpi5.reset_index(), "TVPI Trimestral",
-                           f"tvpi_trimestral_{cc5}.xlsx", "TVPI",
-                           f"TVPI Trimestral — {cc5}", report_curr, key="dl_tvpi")
+        for grupo_nombre, estrategias in GRUPOS_EV.items():
+            df_g = df_tvpi5[df_tvpi5['Strategy'].isin(estrategias)].copy()
+            if df_g.empty: continue
+            df_g = df_g.sort_values(['Vintage','Fund'])
+            df_g.index = range(1, len(df_g) + 1)
+            st.markdown(f"### {grupo_nombre}")
+            st.dataframe(df_g.style.format(fmt_tvpi, na_rep="-"),
+                         use_container_width=True, height=min(50 + len(df_g)*36, 600))
+            excel_download_btn(df_g.reset_index(), f"TVPI {grupo_nombre.split()[-1]}",
+                               f"tvpi_{grupo_nombre.split()[-1].lower()}_{cc5}.xlsx",
+                               "TVPI", f"TVPI {grupo_nombre} — {cc5}",
+                               report_curr, key=f"dl_tvpi_{grupo_nombre}")
+            st.markdown("---")
 
     if tab_active("💰 DPI"):
         sel6 = st.radio("💱 Moneda de cálculo", CURR_OPTIONS, horizontal=True, key="curr_dpi",
@@ -1767,15 +1769,21 @@ try:
         df_dpi6 = df_dpi6[df_dpi6.columns[::-1]]
         meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
         df_dpi6 = meta.join(df_dpi6, how='right')
-        df_dpi6['_o'] = df_dpi6['Strategy'].apply(lambda x: STRAT_ORDER.index(x) if x in STRAT_ORDER else 999)
-        df_dpi6 = df_dpi6.sort_values(['_o','Vintage','Fund']).drop(columns='_o')
         q_cols6 = [c for c in df_dpi6.columns if c not in ['Strategy','Vintage']]
         fmt_dpi = {c: '{:.2f}x' for c in q_cols6}
-        st.dataframe(df_dpi6.style.format(fmt_dpi, na_rep="-").apply(style_irr_group, axis=1),
-                     use_container_width=True)
-        excel_download_btn(df_dpi6.reset_index(), "DPI Trimestral",
-                           f"dpi_trimestral_{cc6}.xlsx", "DPI",
-                           f"DPI Trimestral — {cc6}", report_curr, key="dl_dpi")
+        for grupo_nombre, estrategias in GRUPOS_EV.items():
+            df_g = df_dpi6[df_dpi6['Strategy'].isin(estrategias)].copy()
+            if df_g.empty: continue
+            df_g = df_g.sort_values(['Vintage','Fund'])
+            df_g.index = range(1, len(df_g) + 1)
+            st.markdown(f"### {grupo_nombre}")
+            st.dataframe(df_g.style.format(fmt_dpi, na_rep="-"),
+                         use_container_width=True, height=min(50 + len(df_g)*36, 600))
+            excel_download_btn(df_g.reset_index(), f"DPI {grupo_nombre.split()[-1]}",
+                               f"dpi_{grupo_nombre.split()[-1].lower()}_{cc6}.xlsx",
+                               "DPI", f"DPI {grupo_nombre} — {cc6}",
+                               report_curr, key=f"dl_dpi_{grupo_nombre}")
+            st.markdown("---")
 
     if tab_active("🔄 Rent."):
         sel7 = st.radio("💱 Moneda de cálculo", CURR_OPTIONS, horizontal=True, key="curr_rent",
@@ -1787,15 +1795,21 @@ try:
         df_ret7 = df_ret7[df_ret7.columns[::-1]]
         meta = df_final[['Fund','Strategy','Vintage']].set_index('Fund')
         df_ret7 = meta.join(df_ret7, how='right')
-        df_ret7['_o'] = df_ret7['Strategy'].apply(lambda x: STRAT_ORDER.index(x) if x in STRAT_ORDER else 999)
-        df_ret7 = df_ret7.sort_values(['_o','Vintage','Fund']).drop(columns='_o')
         q_cols7 = [c for c in df_ret7.columns if c not in ['Strategy','Vintage']]
         fmt_ret = {c: '{:.2f}%' for c in q_cols7}
-        st.dataframe(df_ret7.style.format(fmt_ret, na_rep="N/A").apply(style_irr_group, axis=1),
-                     use_container_width=True)
-        excel_download_btn(df_ret7.reset_index(), "Rentabilidad Trimestral",
-                           f"rentabilidad_trimestral_{cc7}.xlsx", "Rentabilidad",
-                           f"Rentabilidad Trimestral — {cc7}", report_curr, key="dl_rent")
+        for grupo_nombre, estrategias in GRUPOS_EV.items():
+            df_g = df_ret7[df_ret7['Strategy'].isin(estrategias)].copy()
+            if df_g.empty: continue
+            df_g = df_g.sort_values(['Vintage','Fund'])
+            df_g.index = range(1, len(df_g) + 1)
+            st.markdown(f"### {grupo_nombre}")
+            st.dataframe(df_g.style.format(fmt_ret, na_rep="N/A"),
+                         use_container_width=True, height=min(50 + len(df_g)*36, 600))
+            excel_download_btn(df_g.reset_index(), f"Rent. {grupo_nombre.split()[-1]}",
+                               f"rent_{grupo_nombre.split()[-1].lower()}_{cc7}.xlsx",
+                               "Rentabilidad", f"Rentabilidad {grupo_nombre} — {cc7}",
+                               report_curr, key=f"dl_rent_{grupo_nombre}")
+            st.markdown("---")
 
     if tab_active("💸 Cash Flows"):
         st.subheader(f"Cash Flows del Portfolio ({report_curr})")
